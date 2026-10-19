@@ -445,15 +445,19 @@ def agent_reporter(state: dict[str, Any]) -> dict[str, Any]:
     is_auto = state.get("auto_approve", False)
     approved = False
 
-    if is_auto or not sys.stdin.isatty():
-        print("   Action       : AUTO-APPROVED (--auto-approve flag or scripted mode)")
+    if is_auto:
+        print("   Action       : AUTO-APPROVED (--auto-approve flag)")
         approved = True
     else:
-        user_choice = input("\n   Type 'approve' to send email to finance, or 'reject' to cancel: ").strip().lower()
-        if user_choice == "approve":
-            approved = True
-        else:
-            print("   Action       : REJECTED by human operator.")
+        try:
+            user_choice = input("\n   Type 'approve' to send email to finance, or 'reject' to cancel: ").strip().lower()
+            if user_choice == "approve":
+                approved = True
+            else:
+                print("   Action       : REJECTED by human operator.")
+                approved = False
+        except (EOFError, KeyboardInterrupt):
+            print("   Action       : Non-interactive session, skipping dispatch.")
             approved = False
 
     if not approved:

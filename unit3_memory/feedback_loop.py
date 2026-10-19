@@ -133,8 +133,7 @@ class FeedbackLoopManager:
 
             # 2. Check interactive user input if in interactive mode and not resolved
             if provided_amount is None and auto_prompt:
-                # If running non-interactively or no TTY, skip interactive prompt
-                if sys.stdin.isatty():
+                try:
                     print(f"\n   [FEEDBACK LOOP - ADJUST] Missing data detected:")
                     print(f"   Row: {date_val} | Vendor: {vendor} | Desc: {desc} | Issue: {flag}")
                     user_input = input(f"   Enter missing amount for '{vendor}' (or press Enter to skip): ").strip()
@@ -146,6 +145,8 @@ class FeedbackLoopManager:
                             )
                         except ValueError:
                             print(f"   Invalid amount entered for '{vendor}'. Skipping.")
+                except (EOFError, KeyboardInterrupt):
+                    pass
 
             # 3. Apply resolution if amount obtained
             if provided_amount is not None and provided_amount > 0:
