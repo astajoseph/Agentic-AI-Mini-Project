@@ -176,5 +176,29 @@ The pipeline **never crashes** due to a missing LLM.
 
 ---
 
+## Streamlit Observability Dashboard (Phase 3)
+
+Launch the interactive web interface:
+```bash
+streamlit run streamlit_app.py
+```
+Provides:
+- Live blackboard state inspection
+- Real-time FIPA-ACL multi-agent communication log
+- Downloadable PDF report and `.eml` message viewer
+- Interactive human approval gate (`Approve` / `Reject`)
+- Long-term memory category correction panel
+
+---
+
+## Automated Test Suite (Pytest)
+
+Run the automated test suite covering Units 3 & 4:
+```bash
+python -m pytest -v tests/test_agent.py
+```
+
+---
+
 ## License
 MIT — open-source, educational use.
