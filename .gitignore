@@ -22,6 +22,7 @@ ENV/
 
 # ChromaDB persistent store
 chroma_db/
+data/chroma_db/
 
 # Generated outputs
 expense_report.pdf
