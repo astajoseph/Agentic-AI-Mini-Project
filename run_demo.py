@@ -52,7 +52,7 @@ def run_command(cmd: list[str], description: str):
 def scenario_1():
     banner("SCENARIO 1: Clean Base Run (Phase 0 Base Pipeline)")
     print("Concept: 9-node LangGraph DAG with deterministic calculation & PDF publishing.")
-    print("Expected: 20 rows ingested, Flights=$2,075, Grand Total=$3,530.00, 2 exceptions audited.\n")
+    print("Expected: 20 rows ingested, Flights=₹2,075, Grand Total=₹3,530.00, 2 exceptions audited.\n")
     cmd = [sys.executable, "main.py", "--mode", "base"]
     run_command(cmd, "Running Base LangGraph Pipeline")
 
@@ -61,7 +61,7 @@ def scenario_2():
     banner("SCENARIO 2: Missing-Data Feedback Loop (Unit 3)")
     print("Concept: Act-Observe-Reflect-Adjust cycle with retry budget.")
     print("Expected: Detects missing amounts for Lyft & Parking Authority, resolves them via answers.json,")
-    print("          and dynamically recalculates Grand Total to $3,653.25.\n")
+    print("          and dynamically recalculates Grand Total to ₹3,653.25.\n")
     cmd = [
         sys.executable,
         "main.py",

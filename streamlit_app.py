@@ -99,7 +99,7 @@ if "final_state" in st.session_state:
 
     # Top KPI Metrics
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Grand Total", f"${grand_total:,.2f}")
+    c1.metric("Grand Total", f"₹{grand_total:,.2f}")
     c2.metric("Period", f"{state.get('date_range', ('?','?'))[0]} to {state.get('date_range', ('?','?'))[1]}")
     c3.metric("Exceptions / Flagged", len(exceptions))
     c4.metric("ACL Messages", len(msg_log))
@@ -117,7 +117,7 @@ if "final_state" in st.session_state:
         st.subheader("Category Totals (Deterministic)")
         cols = st.columns(len(cat_totals) if cat_totals else 1)
         for col, (cat, amt) in zip(cols, sorted(cat_totals.items())):
-            col.metric(cat, f"${amt:,.2f}")
+            col.metric(cat, f"₹{amt:,.2f}")
 
         if exceptions:
             st.warning(f"⚠️ {len(exceptions)} item(s) flagged for manual audit:")

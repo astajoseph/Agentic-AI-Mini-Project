@@ -88,7 +88,7 @@ def print_blackboard_snapshot(agent_name: str, state: dict[str, Any]) -> None:
     print(f"   | Status        : {status.upper()}")
     print(f"   | Active Agent  : {agent_name}")
     print(f"   | Data On Board : raw={raw_count} | filtered={filt_count} | categorized={cat_count} | flagged={exc_count}")
-    print(f"   | Running Total : ${grand_total:,.2f}")
+    print(f"   | Running Total : ₹{grand_total:,.2f}")
     print(f"   | ACL Messages  : {msg_count} messages exchanged")
     print("   +-------------------------------------------------------------+\n")
 
@@ -334,20 +334,20 @@ def agent_auditor(state: dict[str, Any]) -> dict[str, Any]:
     for r in updated_rows:
         key = (r.get("vendor"), r.get("date"), r.get("amount"))
         if key in seen and r.get("amount"):
-            duplicates.append(f"{r.get('vendor')} on {r.get('date')} (${r.get('amount')})")
+            duplicates.append(f"{r.get('vendor')} on {r.get('date')} (₹{r.get('amount')})")
         seen.add(key)
 
     if duplicates:
         print(f"   [AUDITOR WARNING] Potential duplicate transactions found: {duplicates}")
 
-    # Check high value expenses (> $1,000)
+    # Check high value expenses (> ₹1,000)
     high_value = [
-        f"{r.get('vendor')}: ${float(r.get('amount')):.2f}"
+        f"{r.get('vendor')}: ₹{float(r.get('amount')):.2f}"
         for r in updated_rows
         if r.get("amount") and float(r.get("amount", 0)) >= 1000.0
     ]
     if high_value:
-        print(f"   [AUDITOR AUDIT] High-value expenses (>= $1,000): {high_value}")
+        print(f"   [AUDITOR AUDIT] High-value expenses (>= ₹1,000): {high_value}")
 
     print_trace(
         node_name="AuditorAgent",
@@ -397,9 +397,9 @@ def agent_reporter(state: dict[str, Any]) -> dict[str, Any]:
 
     # 1. Deterministic Calculation
     totals = calculate_totals(state["categorized_expenses"])
-    print(f"   => Recalculated Grand Total: ${totals['grand_total']:,.2f}")
+    print(f"   => Recalculated Grand Total: ₹{totals['grand_total']:,.2f}")
     for cat, amt in sorted(totals["category_totals"].items()):
-        print(f"      - {cat}: ${amt:,.2f}")
+        print(f"      - {cat}: ₹{amt:,.2f}")
 
     # 2. PDF Generation
     pdf_out = str(Path(__file__).parent.parent / "expense_report.pdf")
@@ -435,7 +435,7 @@ def agent_reporter(state: dict[str, Any]) -> dict[str, Any]:
     print("   [HUMAN APPROVAL GATE - ADJUSTABLE AUTONOMY]")
     print("   " + "=" * 60)
     print(f"   Destination  : {recipient}")
-    print(f"   Grand Total  : ${totals['grand_total']:,.2f}")
+    print(f"   Grand Total  : ₹{totals['grand_total']:,.2f}")
     print(f"   Period       : {state['date_range'][0]} to {state['date_range'][1]}")
     print(f"   Flagged Rows : {len(state.get('exceptions', []))}")
     if state.get("auditor_warnings"):

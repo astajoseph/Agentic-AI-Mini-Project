@@ -126,7 +126,7 @@ class FeedbackLoopManager:
                 try:
                     provided_amount = float(self.scripted_answers[vendor])
                     adjustment_logs.append(
-                        f"Resolved '{vendor}' via scripted answers: ${provided_amount:.2f}"
+                        f"Resolved '{vendor}' via scripted answers: ₹{provided_amount:.2f}"
                     )
                 except (ValueError, TypeError):
                     pass
@@ -136,12 +136,13 @@ class FeedbackLoopManager:
                 try:
                     print(f"\n   [FEEDBACK LOOP - ADJUST] Missing data detected:")
                     print(f"   Row: {date_val} | Vendor: {vendor} | Desc: {desc} | Issue: {flag}")
-                    user_input = input(f"   Enter missing amount for '{vendor}' (or press Enter to skip): ").strip()
+                    user_input = input(f"   Enter missing amount for '{vendor}' in ₹ (or press Enter to skip): ").strip()
                     if user_input:
                         try:
-                            provided_amount = float(user_input.replace("$", "").replace(",", ""))
+                            clean_val = user_input.replace("₹", "").replace("Rs.", "").replace("Rs", "").replace("$", "").replace(",", "").strip()
+                            provided_amount = float(clean_val)
                             adjustment_logs.append(
-                                f"Resolved '{vendor}' via user input: ${provided_amount:.2f}"
+                                f"Resolved '{vendor}' via user input: ₹{provided_amount:.2f}"
                             )
                         except ValueError:
                             print(f"   Invalid amount entered for '{vendor}'. Skipping.")

@@ -336,7 +336,7 @@ def calculate_totals(rows: list[dict]) -> dict[str, Any]:
     grand_total = sum(category_totals.values())
 
     logger.info(
-        "   Grand total: $%.2f across %d categories.",
+        "   Grand total: ₹%.2f across %d categories.",
         grand_total, len(category_totals),
     )
     if skipped:
@@ -448,8 +448,8 @@ def generate_pdf_report(
     summary_data = [["Category", "Total Amount"]]
     cat_totals   = totals.get("category_totals", {})
     for cat in sorted(cat_totals):
-        summary_data.append([cat, f"${cat_totals[cat]:,.2f}"])
-    summary_data.append(["GRAND TOTAL", f"${totals.get('grand_total', 0):,.2f}"])
+        summary_data.append([cat, f"Rs. {cat_totals[cat]:,.2f}"])
+    summary_data.append(["GRAND TOTAL", f"Rs. {totals.get('grand_total', 0):,.2f}"])
 
     summary_table = Table(summary_data, colWidths=[11 * cm, 5 * cm])
     summary_table.setStyle(TableStyle([
@@ -482,7 +482,7 @@ def generate_pdf_report(
     detail_data    = [detail_headers]
     for row in rows:
         amount     = row.get("amount", "").strip()
-        amount_str = f"${float(amount):,.2f}" if amount else "MISSING"
+        amount_str = f"Rs. {float(amount):,.2f}" if amount else "MISSING"
         # Use Yes/No instead of unicode symbols — Helvetica can't render them
         receipt    = "Yes" if row.get("receipt_attached", "").lower() == "true" else "No"
         detail_data.append([
@@ -588,7 +588,7 @@ def draft_email(
     grand_total = totals.get("grand_total", 0.0)
     cat_totals  = totals.get("category_totals", {})
     breakdown   = "\n".join(
-        f"  - {cat}: ${amt:,.2f}" for cat, amt in sorted(cat_totals.items())
+        f"  - {cat}: ₹{amt:,.2f}" for cat, amt in sorted(cat_totals.items())
     )
 
     fallback_body = (
@@ -596,7 +596,7 @@ def draft_email(
         f"Dear Finance Team,\n\n"
         f"Please find attached the travel expense report for the period "
         f"{date_range[0]} to {date_range[1]}.\n\n"
-        f"The grand total for the period is ${grand_total:,.2f}. "
+        f"The grand total for the period is ₹{grand_total:,.2f}. "
         f"There are {num_exceptions} item(s) flagged for manual review due to "
         f"missing data (amount or date). Please refer to the Exceptions appendix "
         f"in the attached PDF for details.\n\n"
@@ -620,7 +620,7 @@ def draft_email(
         f"  \"{instruction}\"\n\n"
         f"Context:\n"
         f"  - Period covered: {date_range[0]} to {date_range[1]}\n"
-        f"  - Grand total of expenses: ${grand_total:,.2f}\n"
+        f"  - Grand total of expenses: ₹{grand_total:,.2f}\n"
         f"  - Category breakdown:\n{breakdown}\n"
         f"  - Number of flagged/exception items requiring review: {num_exceptions}\n"
         f"  - A PDF report is attached.\n"

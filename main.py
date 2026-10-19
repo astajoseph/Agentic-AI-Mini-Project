@@ -235,11 +235,11 @@ def node_calculate(state: ExpenseState) -> ExpenseState:
 
     totals = calculate_totals(state["categorized_expenses"])
 
-    print(f"   => Grand total: ${totals['grand_total']:,.2f}")
+    print(f"   => Grand total: ₹{totals['grand_total']:,.2f}")
     for cat, amt in sorted(totals["category_totals"].items()):
-        print(f"      {cat}: ${amt:,.2f}")
+        print(f"      {cat}: ₹{amt:,.2f}")
 
-    step_log = _log_step(state, f"CALCULATE: grand_total=${totals['grand_total']:,.2f}")
+    step_log = _log_step(state, f"CALCULATE: grand_total=₹{totals['grand_total']:,.2f}")
     return {**state, "totals": totals, "step_log": step_log}
 
 
@@ -357,7 +357,7 @@ def node_confirm(state: ExpenseState) -> ExpenseState:
   |         EXPENSE REPORT AGENT -- DONE          |
   +-----------------------------------------------+
   | Period          : {date_range[0]} -> {date_range[1]}
-  | Grand Total     : ${totals.get('grand_total', 0):,.2f}
+  | Grand Total     : ₹{totals.get('grand_total', 0):,.2f}
   | PDF Report      : {state.get('pdf_path', 'N/A')}
   | Email Body File : drafted_email.txt
   | Email Status    : {result.get('status', 'N/A')}

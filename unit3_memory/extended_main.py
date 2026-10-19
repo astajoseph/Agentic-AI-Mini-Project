@@ -49,7 +49,7 @@ def agent_confirm_summary(state: dict[str, Any]) -> dict[str, Any]:
   +-------------------------------------------------------------+
   | Workflow Status : {status.upper()}
   | Period          : {state.get('date_range', ('?', '?'))[0]} -> {state.get('date_range', ('?', '?'))[1]}
-  | Grand Total     : ${totals.get('grand_total', 0):,.2f}
+  | Grand Total     : ₹{totals.get('grand_total', 0):,.2f}
   | PDF Published   : {state.get('pdf_path', 'N/A')}
   | RFC 822 EML File: {eml_path}
   | Flagged / Audited: {len(exceptions)}
