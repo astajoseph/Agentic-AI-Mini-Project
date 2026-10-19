@@ -418,8 +418,8 @@ def build_graph():
 def _parse_args():
     parser = argparse.ArgumentParser(description="Expense Report Agent")
     parser.add_argument(
-        "--mode", choices=["base", "extended"], default="base",
-        help="Run mode: 'base' (original pipeline) or 'extended' (Phase 1 memory + feedback)",
+        "--mode", choices=["base", "extended"], default="extended",
+        help="Run mode: 'extended' (full agentic pipeline with memory, feedback, approval) or 'base' (original 9-node pipeline)",
     )
     parser.add_argument(
         "--correct", type=str, default=None,
