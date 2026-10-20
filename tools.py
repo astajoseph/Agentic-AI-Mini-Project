@@ -122,7 +122,9 @@ def retrieve_expenses(csv_path: str) -> list[dict[str, Any]]:
             clean = {k.strip(): (v or "").strip() for k, v in row.items()}
             rows.append(clean)
 
-    logger.info("   ✔ Loaded %d rows.", len(rows))
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
+    logger.info("   ✔ Loaded %d rows. | TOOL: csv.read %d rows", len(rows), len(rows))
+    print(f"   [TRACE] TOOL: csv.read {len(rows)} rows from {csv_path}")
     return rows
 
 
@@ -234,6 +236,17 @@ def categorize_expenses(
                 row.get("vendor"),
             )
 
+        # ── Flag Receipt = No ──────────────────────────────────────────────
+        receipt = row.get("Receipt", "").strip().lower()
+        if receipt == "no":
+            if "_flag" not in row:
+                row["_flag"] = "no receipt"
+            new_exceptions.append({**row, "_source": "categorize_step"})
+            logger.warning(
+                "   ⚠ Row flagged — no receipt: vendor=%s",
+                row.get("vendor"),
+            )
+
         existing_cat = row.get("category", "").strip()
         if existing_cat in VALID_CATEGORIES:
             categorized.append(row)
@@ -295,9 +308,10 @@ def categorize_expenses(
         categorized.append(row)
 
     logger.info(
-        "   ✔ Categorisation complete. %d rows processed, %d amount-flags raised.",
+        "   ✔ Categorisation complete. %d rows processed, %d flags raised.",
         len(categorized), len(new_exceptions),
     )
+    print(f"   [TRACE] TOOL: ollama.generate {len([r for r in categorized if r.get('category')])} categories inferred")
     return categorized, new_exceptions
 
 
@@ -305,7 +319,7 @@ def categorize_expenses(
 # TOOL 4 — Calculate totals (deterministic, NO LLM)
 # ════════════════════════════════════════════════════════════════════════════
 
-def calculate_totals(rows: list[dict]) -> dict[str, Any]:
+def calculate_totals(rows: list[dict], exceptions: list[dict] | None = None) -> dict[str, Any]:
     """
     Compute total per category and grand total.
     Rows with missing/invalid amounts are skipped (already flagged upstream).
@@ -334,17 +348,22 @@ def calculate_totals(rows: list[dict]) -> dict[str, Any]:
         category_totals[cat] = category_totals.get(cat, 0.0) + amount
 
     grand_total = sum(category_totals.values())
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
 
     logger.info(
-        "   Grand total: ₹%.2f across %d categories.",
-        grand_total, len(category_totals),
+        "   Grand total: %s%.2f across %d categories.",
+        currency, grand_total, len(category_totals),
     )
     if skipped:
         logger.info("   ℹ %d rows skipped (missing/invalid amounts).", skipped)
 
+    num_flagged = len(exceptions) if exceptions else 0
+    print(f"   [TRACE] TOOL: calculate_total grand_total={currency}{grand_total:,.2f} flagged={num_flagged}")
+
     return {
         "category_totals": category_totals,
         "grand_total":     grand_total,
+        "flagged_count":   num_flagged,
     }
 
 
@@ -448,8 +467,14 @@ def generate_pdf_report(
     summary_data = [["Category", "Total Amount"]]
     cat_totals   = totals.get("category_totals", {})
     for cat in sorted(cat_totals):
-        summary_data.append([cat, f"Rs. {cat_totals[cat]:,.2f}"])
-    summary_data.append(["GRAND TOTAL", f"Rs. {totals.get('grand_total', 0):,.2f}"])
+        currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
+        summary_data.append([cat, f"{currency} {cat_totals[cat]:,.2f}"])
+
+    # Grand total label includes flagged items count
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
+    flagged_count = totals.get("flagged_count", 0)
+    grand_total_label = f"GRAND TOTAL" + (f" (excludes {flagged_count} flagged items)" if flagged_count else "")
+    summary_data.append([grand_total_label, f"{currency} {totals.get('grand_total', 0):,.2f}"])
 
     summary_table = Table(summary_data, colWidths=[11 * cm, 5 * cm])
     summary_table.setStyle(TableStyle([
@@ -480,11 +505,13 @@ def generate_pdf_report(
 
     detail_headers = ["Date", "Vendor", "Description", "Category", "Amount", "Receipt"]
     detail_data    = [detail_headers]
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
     for row in rows:
         amount     = row.get("amount", "").strip()
-        amount_str = f"Rs. {float(amount):,.2f}" if amount else "MISSING"
-        # Use Yes/No instead of unicode symbols — Helvetica can't render them
-        receipt    = "Yes" if row.get("receipt_attached", "").lower() == "true" else "No"
+        amount_str = f"{currency} {float(amount):,.2f}" if amount else "MISSING"
+        # Use Yes/No from Receipt column (case-insensitive)
+        receipt_val = row.get("Receipt", "").strip().lower()
+        receipt = "Yes" if receipt_val == "yes" else "No"
         detail_data.append([
             row.get("date", ""),
             row.get("vendor", ""),
@@ -561,6 +588,7 @@ def generate_pdf_report(
 
     doc.build(story)
     logger.info("   ✔ PDF written to: %s", output_path)
+    print(f"   [TRACE] TOOL: pdf.generate {output_path} ({len(rows)} rows, {len(exceptions)} flagged)")
     return output_path
 
 
@@ -585,10 +613,11 @@ def draft_email(
     """
     logger.info("   [DRAFT_EMAIL] Drafting email with: %s", llm_label)
 
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
     grand_total = totals.get("grand_total", 0.0)
     cat_totals  = totals.get("category_totals", {})
     breakdown   = "\n".join(
-        f"  - {cat}: ₹{amt:,.2f}" for cat, amt in sorted(cat_totals.items())
+        f"  - {cat}: {currency} {amt:,.2f}" for cat, amt in sorted(cat_totals.items())
     )
 
     fallback_body = (
@@ -596,7 +625,7 @@ def draft_email(
         f"Dear Finance Team,\n\n"
         f"Please find attached the travel expense report for the period "
         f"{date_range[0]} to {date_range[1]}.\n\n"
-        f"The grand total for the period is ₹{grand_total:,.2f}. "
+        f"The grand total for the period is {currency} {grand_total:,.2f}. "
         f"There are {num_exceptions} item(s) flagged for manual review due to "
         f"missing data (amount or date). Please refer to the Exceptions appendix "
         f"in the attached PDF for details.\n\n"
@@ -620,7 +649,7 @@ def draft_email(
         f"  \"{instruction}\"\n\n"
         f"Context:\n"
         f"  - Period covered: {date_range[0]} to {date_range[1]}\n"
-        f"  - Grand total of expenses: ₹{grand_total:,.2f}\n"
+        f"  - Grand total of expenses: {currency} {grand_total:,.2f}\n"
         f"  - Category breakdown:\n{breakdown}\n"
         f"  - Number of flagged/exception items requiring review: {num_exceptions}\n"
         f"  - A PDF report is attached.\n"
@@ -656,6 +685,7 @@ def draft_email(
                 else str(response)
             ).strip()
             logger.info("   ✔ Email body drafted successfully.")
+            print(f"   [TRACE] TOOL: ollama.draft_email {len(body)} chars")
             return body
         except Exception as exc:
             if attempt == 0:
@@ -730,6 +760,17 @@ def send_email_with_pdf(
         "pdf_attached": pdf_filename,
     }
 
+    # Always save .eml locally (backup/archive)
+    outbox_dir = Path(__file__).parent / "outbox"
+    outbox_dir.mkdir(exist_ok=True)
+    from datetime import datetime as dt
+    eml_filename = f"report_{dt.now().strftime('%Y%m%d_%H%M%S')}.eml"
+    eml_path = outbox_dir / eml_filename
+    with open(eml_path, "w", encoding="utf-8") as f:
+        f.write(msg.as_string())
+    result["eml_saved"] = str(eml_path)
+    logger.info("   ✔ Email archived locally: %s", eml_path)
+
     is_placeholder = (
         not smtp_user
         or not smtp_pass
@@ -742,6 +783,7 @@ def send_email_with_pdf(
         )
         result["status"] = "simulated (demo mode: credentials not configured)"
         result["note"]   = "Set real SMTP_USER and SMTP_PASS in .env to deliver real emails."
+        print(f"   [TRACE] TOOL: smtp.send {recipient} (simulated, saved to {eml_filename})")
         return result
 
     try:
@@ -752,11 +794,14 @@ def send_email_with_pdf(
             server.sendmail(from_addr, recipient, msg.as_string())
         result["status"] = "sent"
         logger.info("   ✔ Email sent successfully.")
+        print(f"   [TRACE] TOOL: smtp.send {recipient} sent")
     except smtplib.SMTPAuthenticationError:
         logger.error("   SMTP authentication failed. Check SMTP_USER / SMTP_PASS.")
         result["status"] = "failed — SMTP auth error"
+        print(f"   [TRACE] TOOL: smtp.send {recipient} FAILED (auth error)")
     except Exception as exc:
         logger.error("   SMTP error: %s", exc)
         result["status"] = f"failed — {exc}"
+        print(f"   [TRACE] TOOL: smtp.send {recipient} FAILED ({str(exc)[:50]})")
 
     return result

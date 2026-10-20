@@ -233,13 +233,16 @@ def node_calculate(state: ExpenseState) -> ExpenseState:
     print(" NODE 5 | CALCULATE — Computing totals (deterministic Python)")
     print("=" * 60)
 
-    totals = calculate_totals(state["categorized_expenses"])
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
+    totals = calculate_totals(state["categorized_expenses"], state.get("exceptions", []))
 
-    print(f"   => Grand total: ₹{totals['grand_total']:,.2f}")
+    print(f"   => Grand total: {currency}{totals['grand_total']:,.2f}")
+    if totals.get("flagged_count"):
+        print(f"      (excludes {totals['flagged_count']} flagged items)")
     for cat, amt in sorted(totals["category_totals"].items()):
-        print(f"      {cat}: ₹{amt:,.2f}")
+        print(f"      {cat}: {currency}{amt:,.2f}")
 
-    step_log = _log_step(state, f"CALCULATE: grand_total=₹{totals['grand_total']:,.2f}")
+    step_log = _log_step(state, f"CALCULATE: grand_total={currency}{totals['grand_total']:,.2f}")
     return {**state, "totals": totals, "step_log": step_log}
 
 

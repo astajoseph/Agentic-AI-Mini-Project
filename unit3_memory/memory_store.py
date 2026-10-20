@@ -21,6 +21,13 @@ By persisting categorized expenses in a vector store (ChromaDB) with embeddings
 """
 
 import os
+# ── Sentence-Transformers Offline Caching ────────────────────────────────────
+# Configure local model caching for fully offline operation after first run
+hf_home = os.getenv("HF_HOME", "./huggingface_cache")
+st_home = os.getenv("SENTENCE_TRANSFORMERS_HOME", "./huggingface_cache/sentence_transformers")
+os.environ.setdefault("HF_HOME", hf_home)
+os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", st_home)
+
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 import logging
@@ -221,6 +228,7 @@ class ExpenseMemoryStore:
         """
         matches = self.query_similar(vendor, description, top_k=top_k)
         if not matches:
+            print(f"   [TRACE] TOOL: chroma.query vendor='{vendor}' -> 0 matches (skip LLM)")
             return None, [], "no_memories"
 
         top_match = matches[0]
@@ -229,6 +237,7 @@ class ExpenseMemoryStore:
         for m in matches:
             if m["source"] == "user_correction" and m["similarity"] >= 0.70:
                 reason = f"user_correction priority ({m['vendor']} -> {m['category']}, sim={m['similarity']:.2f})"
+                print(f"   [TRACE] TOOL: chroma.query vendor='{vendor}' -> {m['category']} (user correction, sim={m['similarity']:.2f}, skip LLM)")
                 return m["category"], matches, reason
 
         # Check threshold and category agreement among top matches
@@ -239,8 +248,10 @@ class ExpenseMemoryStore:
             if len(cats) == 1:
                 cat = list(cats)[0]
                 reason = f"high_similarity memory match (sim={top_match['similarity']:.2f} >= {self.similarity_threshold})"
+                print(f"   [TRACE] TOOL: chroma.query vendor='{vendor}' -> {cat} (memory hit, sim={top_match['similarity']:.2f}, skip LLM)")
                 return cat, matches, reason
 
+        print(f"   [TRACE] TOOL: chroma.query vendor='{vendor}' -> below threshold (sim={top_match['similarity']:.2f}, use LLM with {len(matches)} few-shots)")
         return None, matches, f"below_threshold (top sim={top_match['similarity']:.2f} < {self.similarity_threshold})"
 
     def add_user_correction(self, vendor: str, category: str, description: str = "") -> bool:

@@ -48,6 +48,8 @@ from tools import (
 )
 from unit3_memory.memory_store import ExpenseMemoryStore
 from unit3_memory.feedback_loop import FeedbackLoopManager
+from access_control import Role, Permission, check_permission, enforce_permission, validate_recipient
+from audit_log import get_audit_log
 from .acl_message import ACLMessage, ACLPerformative
 
 logger = logging.getLogger(__name__)
@@ -75,6 +77,8 @@ def append_acl_message(
 
 def print_blackboard_snapshot(agent_name: str, state: dict[str, Any]) -> None:
     """Print an ASCII snapshot of the shared Blackboard state."""
+    import os
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
     raw_count = len(state.get("raw_expenses", []))
     filt_count = len(state.get("filtered_expenses", []))
     cat_count = len(state.get("categorized_expenses", []))
@@ -88,7 +92,7 @@ def print_blackboard_snapshot(agent_name: str, state: dict[str, Any]) -> None:
     print(f"   | Status        : {status.upper()}")
     print(f"   | Active Agent  : {agent_name}")
     print(f"   | Data On Board : raw={raw_count} | filtered={filt_count} | categorized={cat_count} | flagged={exc_count}")
-    print(f"   | Running Total : ₹{grand_total:,.2f}")
+    print(f"   | Running Total : {currency}{grand_total:,.2f}")
     print(f"   | ACL Messages  : {msg_count} messages exchanged")
     print("   +-------------------------------------------------------------+\n")
 
@@ -328,26 +332,38 @@ def agent_auditor(state: dict[str, Any]) -> dict[str, Any]:
     for al in adjust_logs:
         print(f"   [FEEDBACK LOOP - ADJUST] {al}")
 
+    # Check for rows without receipt (Receipt = No)
+    no_receipt = []
+    for r in updated_rows:
+        receipt_val = r.get("Receipt", "").strip().lower()
+        if receipt_val == "no":
+            no_receipt.append(f"{r.get('vendor')} ({r.get('date')})")
+
+    if no_receipt:
+        print(f"   [AUDITOR WARNING] Items without receipt attached: {no_receipt}")
+
     # Check for duplicate transactions (Vendor + Date + Amount)
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
     seen = set()
     duplicates = []
     for r in updated_rows:
         key = (r.get("vendor"), r.get("date"), r.get("amount"))
         if key in seen and r.get("amount"):
-            duplicates.append(f"{r.get('vendor')} on {r.get('date')} (₹{r.get('amount')})")
+            duplicates.append(f"{r.get('vendor')} on {r.get('date')} ({currency}{r.get('amount')})")
         seen.add(key)
 
     if duplicates:
         print(f"   [AUDITOR WARNING] Potential duplicate transactions found: {duplicates}")
 
-    # Check high value expenses (> ₹1,000)
+    # Check high value expenses (>= 1,000 in configured currency)
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
     high_value = [
-        f"{r.get('vendor')}: ₹{float(r.get('amount')):.2f}"
+        f"{r.get('vendor')}: {currency}{float(r.get('amount')):.2f}"
         for r in updated_rows
         if r.get("amount") and float(r.get("amount", 0)) >= 1000.0
     ]
     if high_value:
-        print(f"   [AUDITOR AUDIT] High-value expenses (>= ₹1,000): {high_value}")
+        print(f"   [AUDITOR AUDIT] High-value expenses (>= {currency}1,000): {high_value}")
 
     print_trace(
         node_name="AuditorAgent",
@@ -396,10 +412,13 @@ def agent_reporter(state: dict[str, Any]) -> dict[str, Any]:
     print("=" * 65)
 
     # 1. Deterministic Calculation
-    totals = calculate_totals(state["categorized_expenses"])
-    print(f"   => Recalculated Grand Total: ₹{totals['grand_total']:,.2f}")
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
+    totals = calculate_totals(state["categorized_expenses"], state.get("exceptions", []))
+    print(f"   => Recalculated Grand Total: {currency}{totals['grand_total']:,.2f}")
+    if totals.get("flagged_count"):
+        print(f"      (excludes {totals['flagged_count']} flagged items)")
     for cat, amt in sorted(totals["category_totals"].items()):
-        print(f"      - {cat}: ₹{amt:,.2f}")
+        print(f"      - {cat}: {currency}{amt:,.2f}")
 
     # 2. PDF Generation
     pdf_out = str(Path(__file__).parent.parent / "expense_report.pdf")
@@ -431,11 +450,12 @@ def agent_reporter(state: dict[str, Any]) -> dict[str, Any]:
         f.write(f"To: {recipient}\nAttachment: {pdf_path}\n{'-'*60}\n{email_body}\n")
 
     # 4. Human Approval Gate (Adjustable Autonomy)
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
     print("\n   " + "=" * 60)
     print("   [HUMAN APPROVAL GATE - ADJUSTABLE AUTONOMY]")
     print("   " + "=" * 60)
     print(f"   Destination  : {recipient}")
-    print(f"   Grand Total  : ₹{totals['grand_total']:,.2f}")
+    print(f"   Grand Total  : {currency}{totals['grand_total']:,.2f}")
     print(f"   Period       : {state['date_range'][0]} to {state['date_range'][1]}")
     print(f"   Flagged Rows : {len(state.get('exceptions', []))}")
     if state.get("auditor_warnings"):
@@ -477,7 +497,7 @@ def agent_reporter(state: dict[str, Any]) -> dict[str, Any]:
             "message_log": msg_log,
         }
 
-    # 5. Email Dispatch & EML Archive
+    # 5. Email Dispatch & EML Archive — with access control enforcement
     msg_log = append_acl_message(
         state,
         performative=ACLPerformative.ACCEPT_PROPOSAL,
@@ -485,6 +505,59 @@ def agent_reporter(state: dict[str, Any]) -> dict[str, Any]:
         receiver="Reporter",
         content="Human operator approved expense report for finance submission.",
     )
+
+    # ── ACCESS CONTROL: Only Reporter can send_email, and only after human approval ────
+    audit = get_audit_log()
+    if not check_permission(Role.REPORTER, Permission.SEND_EMAIL):
+        print(f"   [ACL] DENIED: Reporter denied send_email permission")
+        audit.log_action(
+            agent="Reporter",
+            action="send_email",
+            status="denied",
+            detail=f"Permission check failed",
+            recipient=recipient,
+        )
+        msg_log = append_acl_message(
+            {**state, "message_log": msg_log},
+            performative=ACLPerformative.REFUSE,
+            sender="Reporter",
+            receiver="Coordinator",
+            content="Reporter denied send_email permission by access control.",
+        )
+        return {
+            **state,
+            "totals": totals,
+            "pdf_path": pdf_path,
+            "email_body": email_body,
+            "workflow_status": "access_denied",
+            "message_log": msg_log,
+        }
+
+    # ── RECIPIENT VALIDATION ────
+    if not validate_recipient(recipient):
+        print(f"   [ACL] BLOCKED: Recipient {recipient} not in allowlist")
+        audit.log_action(
+            agent="Reporter",
+            action="send_email",
+            status="blocked",
+            detail=f"Recipient not in allowlist",
+            recipient=recipient,
+        )
+        msg_log = append_acl_message(
+            {**state, "message_log": msg_log},
+            performative=ACLPerformative.REFUSE,
+            sender="Reporter",
+            receiver="Coordinator",
+            content=f"Email recipient {recipient} not in allowlist. Aborting send.",
+        )
+        return {
+            **state,
+            "totals": totals,
+            "pdf_path": pdf_path,
+            "email_body": email_body,
+            "workflow_status": "recipient_blocked",
+            "message_log": msg_log,
+        }
 
     send_result = send_email_with_pdf(
         email_body=email_body,
@@ -519,6 +592,16 @@ def agent_reporter(state: dict[str, Any]) -> dict[str, Any]:
         f.write(msg.as_bytes(policy=email.policy.default))
 
     print(f"   => Full RFC 822 Email archived to: {eml_path}")
+
+    # ── AUDIT LOGGING ────
+    audit.log_action(
+        agent="Reporter",
+        action="send_email",
+        status=send_result.get("status", "unknown"),
+        detail=f"Grand total: {totals.get('grand_total', 0):.2f}, flagged items: {len(state.get('exceptions', []))}",
+        recipient=recipient,
+    )
+    print(f"   [AUDIT] Logged email send: {recipient} ({send_result.get('status', 'unknown')})")
 
     msg_log = append_acl_message(
         {**state, "message_log": msg_log},

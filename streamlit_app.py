@@ -97,27 +97,32 @@ if "final_state" in st.session_state:
     pdf_path = state.get("pdf_path")
     email_body = state.get("email_body", "")
 
+    # Currency setup
+    import os
+    currency = os.getenv("CURRENCY_SYMBOL", "Rs.")
+
     # Top KPI Metrics
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Grand Total", f"₹{grand_total:,.2f}")
+    c1.metric("Grand Total", f"{currency} {grand_total:,.2f}")
     c2.metric("Period", f"{state.get('date_range', ('?','?'))[0]} to {state.get('date_range', ('?','?'))[1]}")
     c3.metric("Exceptions / Flagged", len(exceptions))
     c4.metric("ACL Messages", len(msg_log))
 
     # Tabs for detailed views
-    tab_summary, tab_blackboard, tab_messages, tab_pdf, tab_email = st.tabs([
+    tab_summary, tab_blackboard, tab_messages, tab_pdf, tab_email, tab_audit = st.tabs([
         "📊 Financial Breakdown",
         "📋 Shared Blackboard",
         "💬 Multi-Agent ACL Log",
         "📄 Generated PDF Report",
         "✉️ Drafted Email",
+        "🔐 Audit Log",
     ])
 
     with tab_summary:
         st.subheader("Category Totals (Deterministic)")
         cols = st.columns(len(cat_totals) if cat_totals else 1)
         for col, (cat, amt) in zip(cols, sorted(cat_totals.items())):
-            col.metric(cat, f"₹{amt:,.2f}")
+            col.metric(cat, f"{currency} {amt:,.2f}")
 
         if exceptions:
             st.warning(f"⚠️ {len(exceptions)} item(s) flagged for manual audit:")
@@ -166,3 +171,17 @@ if "final_state" in st.session_state:
         eml_path = state.get("eml_path")
         if eml_path and Path(eml_path).exists():
             st.success(f"✔ RFC 822 EML File archived: `{eml_path}`")
+
+    with tab_audit:
+        st.subheader("SQLite Audit Log (Security & Compliance)")
+        st.write("Last 20 actions: approvals, rejections, denied operations, email sends.")
+        try:
+            from audit_log import get_audit_log
+            audit = get_audit_log()
+            records = audit.get_recent(limit=20)
+            if records:
+                st.dataframe(records, use_container_width=True)
+            else:
+                st.info("No audit log records yet. Run the pipeline to generate records.")
+        except Exception as e:
+            st.error(f"Could not load audit log: {e}")

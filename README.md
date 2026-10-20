@@ -146,31 +146,38 @@ The pipeline **never crashes** due to a missing LLM.
 ============================================================
  NODE 1 | RETRIEVE — Loading expenses from CSV
    => 20 expense rows loaded from data/mock_expenses.csv
+   [TRACE] TOOL: csv.read 20 rows from data/mock_expenses.csv
 
  NODE 2 | FILTER — Keeping only last calendar month
    => Date range: 2026-09-01 to 2026-09-30
 
  NODE 3 | CATEGORIZE — Inferring missing categories
    => LLM provider: Local Ollama (qwen2.5:7b)
+   [TRACE] TOOL: ollama.generate 18 categories inferred
 
  NODE 5 | CALCULATE — Computing totals
-   => Grand total: $3,530.00
-      Flights: $2,075.00
-      Hotels:  $1,051.60
-      Meals:   $138.25
-      Transport: $265.15
+   => Grand total: Rs. 3,653.25
+      Flights: Rs. 2,075.00
+      Hotels:  Rs. 753.30
+      Meals:   Rs. 436.55
+      Transport: Rs. 388.40
+   [TRACE] TOOL: calculate_total grand_total=Rs. 3,653.25 flagged=3
 
  NODE 6 | GENERATE PDF
    => PDF saved: expense_report.pdf
+   [TRACE] TOOL: pdf.generate expense_report.pdf (20 rows, 3 flagged)
 
  NODE 8 | SEND EMAIL
    => Send status: simulated (demo mode)
+   [TRACE] TOOL: smtp.send finance@yourcompany.com (simulated, saved to report_20261020_143025.eml)
 
   +-----------------------------------------------+
   |         EXPENSE REPORT AGENT -- DONE          |
   +-----------------------------------------------+
-  | Grand Total : $3,530.00
-  | Flagged     : 2 items (missing amount)
+  | Grand Total : Rs. 3,653.25 (excludes 3 flagged items)
+  | Flagged     : 3 items (missing amount, no receipt)
+  | PDF Report  : expense_report.pdf
+  | EML Archive : outbox/report_*.eml
   +-----------------------------------------------+
 ```
 
@@ -188,6 +195,102 @@ Provides:
 - Downloadable PDF report and `.eml` message viewer
 - Interactive human approval gate (`Approve` / `Reject`)
 - Long-term memory category correction panel
+- **SQLite Audit Log Panel** — view all approvals, rejections, denials, and email sends
+
+---
+
+## Security & Compliance Features
+
+### Access Control (Role-Based)
+- **Retriever**: read_csv only
+- **Categorizer**: read + categorize
+- **Auditor**: read + flag (cannot send)
+- **Reporter**: all permissions (send_email only after human approval)
+
+Every denied action is logged to the ACL trace and `audit.db`.
+
+**Example:** Attempting to call `send_email` from Retriever role:
+```python
+from access_control import Role, Permission, enforce_permission
+enforce_permission(Role.RETRIEVER, Permission.SEND_EMAIL)
+# Raises: PermissionError: retriever denied send_email
+```
+
+### Audit Logging (SQLite)
+All critical actions are logged to `audit.db` with:
+- Timestamp
+- Agent name
+- Action
+- Status (approved, rejected, denied, sent, failed)
+- Details & recipient
+
+View via Streamlit Dashboard → 🔐 Audit Log tab.
+
+### Tool-Call Tracing
+Every tool invocation prints a standardized trace:
+```
+[TRACE] TOOL: csv.read 20 rows from data/mock_expenses.csv
+[TRACE] TOOL: chroma.query vendor='Olive Garden' -> Meals (memory hit, sim=0.92, skip LLM)
+[TRACE] TOOL: ollama.generate 18 categories inferred
+[TRACE] TOOL: pdf.generate expense_report.pdf (20 rows, 3 flagged)
+[TRACE] TOOL: smtp.send finance@yourcompany.com sent
+```
+
+### Email Resilience
+- Primary: SMTP send via Mailtrap sandbox or configured server
+- Fallback 1: If SMTP fails, retry up to 2x
+- Fallback 2: Save RFC 822 `.eml` file locally to `outbox/` for offline delivery
+- Always archives a copy to `outbox/report_YYYYMMDD_HHMMSS.eml`
+
+### Receipt Validation
+Rows with `Receipt = No` are automatically flagged:
+```
+[TRACE] ⚠ Row flagged — no receipt: vendor=Starbucks
+```
+These appear in the PDF's Exceptions Appendix.
+
+---
+
+## Currency Configuration
+
+All outputs (PDF, email, console) use configurable currency symbol:
+```bash
+CURRENCY_SYMBOL=Rs.
+```
+
+Set in `.env`. Applies to all numeric values:
+- PDF tables
+- Email body
+- Console output
+- Streamlit dashboard
+
+---
+
+## Sentence-Transformers Offline Caching
+
+After the first run, embedding models are cached locally for fully offline operation:
+```bash
+export HF_HOME=./huggingface_cache
+export SENTENCE_TRANSFORMERS_HOME=./huggingface_cache/sentence_transformers
+```
+
+The project creates these directories automatically on first run.
+
+---
+
+## Failure & Recovery Scenarios
+
+Test graceful degradation with built-in demo scenarios:
+
+```bash
+# Scenario 4: Ollama unavailable → keyword-rule fallback
+python run_demo.py --scenario 4
+# Output: FAILED: Ollama unavailable → RECOVERED: Using keyword rules
+
+# Scenario 5: SMTP failure → local .eml fallback
+python run_demo.py --scenario 5
+# Output: FAILED: SMTP auth error → RECOVERED: Saved to outbox/
+```
 
 ---
 
@@ -197,6 +300,12 @@ Run the automated test suite covering Units 3 & 4:
 ```bash
 python -m pytest -v tests/test_agent.py
 ```
+
+Includes:
+- Unit tests for memory store, feedback loop, and agent roles
+- Integration tests for full pipeline
+- Access control enforcement tests (Retriever denied send_email)
+- SMTP retry and fallback logic
 
 ---
 
